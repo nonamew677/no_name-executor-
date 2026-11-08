@@ -1,0 +1,1167 @@
+--!strict
+-- ==============================================================================
+-- INTEGRATED NO_NAME EXECUTOR ENGINE MATRIX (COMPACT MOBILE + CONFIG + CROSSHAIR STICK)
+-- ==============================================================================
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+while not player do
+    task.wait(0.1)
+    player = Players.LocalPlayer
+end
+local playerGui = player:WaitForChild("PlayerGui")
+
+local STORAGE_FILE: string = "no_name_Settings.json"
+
+local SystemConfig = {
+    SavedScripts = {} :: { [string]: { Code: string } },
+    LuaAutoLoadScripts = {} :: { [string]: boolean },
+    CustomName = "no_name executor" :: string,
+    ShineEnabled = true :: boolean,
+    CrosshairText = ".gg/Ejmrx9WWH" :: string,
+    CrosshairEnabled = true :: boolean,
+    CrosshairTextEnabled = true :: boolean,
+    RainbowEnabled = true :: boolean,
+    CrosshairStickEnabled = false :: boolean,
+    StickSmoothing = 12 :: number,
+    StickFOV = 250 :: number,
+    StickTeamCheck = true :: boolean,
+    SavedUIPosition = {} :: { [string]: number },
+    CrosshairSpinSpeed = 200 :: number,
+    CrosshairPulseSpeed = 5 :: number,
+    CrosshairOutlineEnabled = false :: boolean,
+    CrosshairTextOutlineEnabled = false :: boolean,
+    CrosshairMode = "Default" :: string,
+}
+
+local ActiveUIElements = {} :: { [string]: { Instance } }
+
+local function LoadConfigData()
+    pcall(function()
+        if type(readfile) == "function" then
+            local content = readfile(STORAGE_FILE)
+            if content and #content > 0 then
+                local decoded = HttpService:JSONDecode(content)
+                if decoded and type(decoded) == "table" then
+                    if decoded.SavedScripts then
+                        for name, data in pairs(decoded.SavedScripts) do
+                            if type(data) == "table" and data.Code then
+                                SystemConfig.SavedScripts[name] = { Code = data.Code }
+                            end
+                        end
+                    end
+                    if decoded.LuaAutoLoadScripts then
+                        for name, enabled in pairs(decoded.LuaAutoLoadScripts) do
+                            if type(enabled) == "boolean" then
+                                SystemConfig.LuaAutoLoadScripts[name] = enabled
+                            end
+                        end
+                    end
+                    if type(decoded.CustomName) == "string" and #decoded.CustomName > 0 then
+                        SystemConfig.CustomName = decoded.CustomName
+                    end
+                    if type(decoded.ShineEnabled) == "boolean" then
+                        SystemConfig.ShineEnabled = decoded.ShineEnabled
+                    end
+                    if type(decoded.CrosshairText) == "string" then
+                        SystemConfig.CrosshairText = decoded.CrosshairText
+                    end
+                    if type(decoded.CrosshairEnabled) == "boolean" then
+                        SystemConfig.CrosshairEnabled = decoded.CrosshairEnabled
+                    end
+                    if type(decoded.CrosshairTextEnabled) == "boolean" then
+                        SystemConfig.CrosshairTextEnabled = decoded.CrosshairTextEnabled
+                    end
+                    if type(decoded.RainbowEnabled) == "boolean" then
+                        SystemConfig.RainbowEnabled = decoded.RainbowEnabled
+                    end
+                    if type(decoded.CrosshairStickEnabled) == "boolean" then
+                        SystemConfig.CrosshairStickEnabled = decoded.CrosshairStickEnabled
+                    end
+                    if type(decoded.StickSmoothing) == "number" then
+                        SystemConfig.StickSmoothing = decoded.StickSmoothing
+                    end
+                    if type(decoded.StickFOV) == "number" then
+                        SystemConfig.StickFOV = decoded.StickFOV
+                    end
+                    if type(decoded.StickTeamCheck) == "boolean" then
+                        SystemConfig.StickTeamCheck = decoded.StickTeamCheck
+                    end
+                    if type(decoded.SavedUIPosition) == "table" and decoded.SavedUIPosition.XScale then
+                        SystemConfig.SavedUIPosition = decoded.SavedUIPosition
+                    end
+                    if type(decoded.CrosshairSpinSpeed) == "number" then
+                        SystemConfig.CrosshairSpinSpeed = math.clamp(decoded.CrosshairSpinSpeed, -2000, 2000)
+                    end
+                    if type(decoded.CrosshairPulseSpeed) == "number" then
+                        SystemConfig.CrosshairPulseSpeed = math.clamp(decoded.CrosshairPulseSpeed, 0, 50)
+                    end
+                    if type(decoded.CrosshairOutlineEnabled) == "boolean" then
+                        SystemConfig.CrosshairOutlineEnabled = decoded.CrosshairOutlineEnabled
+                    end
+                    if type(decoded.CrosshairTextOutlineEnabled) == "boolean" then
+                        SystemConfig.CrosshairTextOutlineEnabled = decoded.CrosshairTextOutlineEnabled
+                    end
+                    if decoded.CrosshairMode == "Default" or decoded.CrosshairMode == "Yokai" then
+                        SystemConfig.CrosshairMode = decoded.CrosshairMode
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function SaveConfigData()
+    pcall(function()
+        if type(writefile) == "function" then
+            writefile(STORAGE_FILE, HttpService:JSONEncode(SystemConfig))
+        end
+    end)
+end
+
+LoadConfigData()
+
+-- ================= YOKAI PRESET =================
+local YOKAI_PRESET = {
+    SpinSpeed  = 420,
+    PulseSpeed = 14,
+    ForceOutline = true,
+    Tint = Color3.fromRGB(200, 30, 70),
+    TintEdge = Color3.fromRGB(120, 10, 30),
+}
+
+local function GetEffectiveCrosshairParams()
+    if SystemConfig.CrosshairMode == "Yokai" then
+        return YOKAI_PRESET.SpinSpeed, YOKAI_PRESET.PulseSpeed, true, YOKAI_PRESET.Tint, YOKAI_PRESET.TintEdge
+    end
+    return SystemConfig.CrosshairSpinSpeed, SystemConfig.CrosshairPulseSpeed, SystemConfig.CrosshairOutlineEnabled, nil, nil
+end
+-- =================================================
+
+pcall(function()
+    local old = playerGui:FindFirstChild("no_nameUI")
+    if old then old:Destroy() end
+    local oldAcid = playerGui:FindFirstChild("AcidOntopUI")
+    if oldAcid then oldAcid:Destroy() end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "no_nameUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 2147483647
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+RunService.RenderStepped:Connect(function()
+    if gui.DisplayOrder ~= 2147483647 then
+        gui.DisplayOrder = 2147483647
+    end
+end)
+
+local RootFrame = Instance.new("Frame")
+RootFrame.Name = "MasterRoot"
+RootFrame.Size = UDim2.fromOffset(300, 26)
+if SystemConfig.SavedUIPosition and SystemConfig.SavedUIPosition.XScale then
+    RootFrame.Position = UDim2.new(
+        SystemConfig.SavedUIPosition.XScale,
+        SystemConfig.SavedUIPosition.XOffset,
+        SystemConfig.SavedUIPosition.YScale,
+        SystemConfig.SavedUIPosition.YOffset
+    )
+else
+    RootFrame.Position = UDim2.new(0.5, -150, 0.1, 0)
+end
+RootFrame.BackgroundTransparency = 1
+RootFrame.ZIndex = 1000
+RootFrame.Parent = gui
+
+local bar = Instance.new("TextButton")
+bar.Name = "StatsBar"
+bar.Size = UDim2.new(1, 0, 0, 26)
+bar.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+bar.BackgroundTransparency = 0.08
+bar.BorderSizePixel = 0
+bar.Text = ""
+bar.AutoButtonColor = false
+bar.Active = true
+bar.ZIndex = 1001
+bar.Parent = RootFrame
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 5)
+corner.Parent = bar
+
+-- ================= GREY TOP LINE WITH SHINE =================
+local accentHolder = Instance.new("Frame")
+accentHolder.Name = "AccentBarHolder"
+accentHolder.Size = UDim2.new(1, 0, 0, 3)
+accentHolder.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+accentHolder.BorderSizePixel = 0
+accentHolder.ClipsDescendants = true
+accentHolder.ZIndex = 1002
+accentHolder.Parent = bar
+
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(0, 2)
+accentCorner.Parent = accentHolder
+
+local shine = Instance.new("Frame")
+shine.Name = "Shine"
+shine.Size = UDim2.new(0, 40, 1, 0)
+shine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+shine.BackgroundTransparency = 0.3
+shine.BorderSizePixel = 0
+shine.ZIndex = 1004
+shine.Parent = accentHolder
+
+local shineGradient = Instance.new("UIGradient")
+shineGradient.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0.1),
+    NumberSequenceKeypoint.new(1, 1),
+})
+shineGradient.Parent = shine
+
+local shinePos = 0
+RunService.RenderStepped:Connect(function(dt)
+    if not SystemConfig.ShineEnabled then
+        shine.Visible = false
+        return
+    end
+    shine.Visible = true
+    shinePos = shinePos + dt * 0.6
+    if shinePos > 1.3 then shinePos = -0.3 end
+    shine.Position = UDim2.new(shinePos, 0, 0, 0)
+end)
+-- =================================================================
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -10, 1, -3)
+label.Position = UDim2.fromOffset(5, 2)
+label.BackgroundTransparency = 1
+label.TextColor3 = Color3.fromRGB(235, 235, 235)
+label.TextSize = 11
+label.Font = Enum.Font.Code
+label.RichText = true
+label.Text = string.format('<font color="#d0d0d0">%s</font> | Loading...', SystemConfig.CustomName)
+label.ZIndex = 1005
+label.Parent = bar
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(1, 0, 0, 310)
+MainFrame.Position = UDim2.fromOffset(0, 30)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.Visible = false
+MainFrame.ZIndex = 1001
+MainFrame.Parent = RootFrame
+
+local FrameStroke = Instance.new("UIStroke")
+FrameStroke.Parent = MainFrame
+FrameStroke.Color = Color3.fromRGB(90, 90, 90)
+FrameStroke.Thickness = 1.5
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 5)
+MainCorner.Parent = MainFrame
+
+-- Nav Button
+local NavBtn = Instance.new("TextButton")
+NavBtn.Size = UDim2.new(0.9, 0, 0, 24)
+NavBtn.Position = UDim2.new(0.05, 0, 1, -30)
+NavBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+NavBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+NavBtn.Text = "SWITCH TO PAGE 2 >"
+NavBtn.Font = Enum.Font.GothamBold
+NavBtn.TextSize = 11
+NavBtn.ZIndex = 1003
+NavBtn.Parent = MainFrame
+
+local NavCorner = Instance.new("UICorner")
+NavCorner.CornerRadius = UDim.new(0, 4)
+NavCorner.Parent = NavBtn
+
+-- Page 1 (Scripts)
+local Page1Frame = Instance.new("Frame")
+Page1Frame.Size = UDim2.new(1, -20, 1, -55)
+Page1Frame.Position = UDim2.fromOffset(10, 10)
+Page1Frame.BackgroundTransparency = 1
+Page1Frame.Visible = true
+Page1Frame.ZIndex = 1002
+Page1Frame.Parent = MainFrame
+
+local MainLayout = Instance.new("UIListLayout")
+MainLayout.Parent = Page1Frame
+MainLayout.SortOrder = Enum.SortOrder.LayoutOrder
+MainLayout.Padding = UDim.new(0, 4)
+
+local NameInput = Instance.new("TextBox")
+NameInput.Size = UDim2.new(1, 0, 0, 26)
+NameInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+NameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+NameInput.PlaceholderText = "Enter Script Name..."
+NameInput.Text = ""
+NameInput.Font = Enum.Font.Gotham
+NameInput.TextSize = 11
+NameInput.ZIndex = 1003
+NameInput.LayoutOrder = 1
+NameInput.Parent = Page1Frame
+
+local NameCorner = Instance.new("UICorner")
+NameCorner.CornerRadius = UDim.new(0, 4)
+NameCorner.Parent = NameInput
+
+local CodeInput = Instance.new("TextBox")
+CodeInput.Size = UDim2.new(1, 0, 0, 40)
+CodeInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+CodeInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+CodeInput.PlaceholderText = "Paste script here..."
+CodeInput.Text = ""
+CodeInput.Font = Enum.Font.Code
+CodeInput.TextSize = 10
+CodeInput.ClearTextOnFocus = false
+CodeInput.MultiLine = true
+CodeInput.ZIndex = 1003
+CodeInput.LayoutOrder = 2
+CodeInput.Parent = Page1Frame
+
+local CodeCorner = Instance.new("UICorner")
+CodeCorner.CornerRadius = UDim.new(0, 4)
+CodeCorner.Parent = CodeInput
+
+local SaveBtn = Instance.new("TextButton")
+SaveBtn.Size = UDim2.new(1, 0, 0, 26)
+SaveBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+SaveBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+SaveBtn.Text = "SAVE TO INVENTORY"
+SaveBtn.Font = Enum.Font.GothamBold
+SaveBtn.TextSize = 11
+SaveBtn.ZIndex = 1003
+SaveBtn.LayoutOrder = 3
+SaveBtn.Parent = Page1Frame
+
+local SaveCorner = Instance.new("UICorner")
+SaveCorner.CornerRadius = UDim.new(0, 4)
+SaveCorner.Parent = SaveBtn
+
+local ScrollList = Instance.new("ScrollingFrame")
+ScrollList.Size = UDim2.new(1, 0, 1, -110)
+ScrollList.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ScrollList.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollList.ScrollBarThickness = 4
+ScrollList.ZIndex = 1003
+ScrollList.LayoutOrder = 4
+ScrollList.Parent = Page1Frame
+
+local ScrollCorner = Instance.new("UICorner")
+ScrollCorner.CornerRadius = UDim.new(0, 4)
+ScrollCorner.Parent = ScrollList
+
+local GridListLayout = Instance.new("UIListLayout")
+GridListLayout.Parent = ScrollList
+GridListLayout.SortOrder = Enum.SortOrder.Name
+GridListLayout.Padding = UDim.new(0, 4)
+GridListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Page 2 (Settings)
+local Page2Frame = Instance.new("ScrollingFrame")
+Page2Frame.Size = UDim2.new(1, -20, 1, -55)
+Page2Frame.Position = UDim2.fromOffset(10, 10)
+Page2Frame.BackgroundTransparency = 1
+Page2Frame.Visible = false
+Page2Frame.ZIndex = 1002
+Page2Frame.ScrollBarThickness = 4
+Page2Frame.CanvasSize = UDim2.new(0, 0, 0, 0)
+Page2Frame.Parent = MainFrame
+
+local Page2Layout = Instance.new("UIListLayout")
+Page2Layout.Parent = Page2Frame
+Page2Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Page2Layout.Padding = UDim.new(0, 6)
+
+local SettingsTitle = Instance.new("TextLabel")
+SettingsTitle.Size = UDim2.new(1, 0, 0, 24)
+SettingsTitle.BackgroundTransparency = 1
+SettingsTitle.Text = "UI SETTINGS"
+SettingsTitle.TextColor3 = Color3.fromRGB(220, 220, 220)
+SettingsTitle.Font = Enum.Font.GothamBold
+SettingsTitle.TextSize = 12
+SettingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+SettingsTitle.ZIndex = 1003
+SettingsTitle.LayoutOrder = 1
+SettingsTitle.Parent = Page2Frame
+
+local CustomNameInput = Instance.new("TextBox")
+CustomNameInput.Size = UDim2.new(1, 0, 0, 30)
+CustomNameInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+CustomNameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+CustomNameInput.PlaceholderText = "Enter Custom UI Name..."
+CustomNameInput.Text = SystemConfig.CustomName
+CustomNameInput.Font = Enum.Font.Gotham
+CustomNameInput.TextSize = 12
+CustomNameInput.ZIndex = 1003
+CustomNameInput.LayoutOrder = 2
+CustomNameInput.Parent = Page2Frame
+
+local CNCorner = Instance.new("UICorner")
+CNCorner.CornerRadius = UDim.new(0, 4)
+CNCorner.Parent = CustomNameInput
+
+local ShineToggleBtn = Instance.new("TextButton")
+ShineToggleBtn.Size = UDim2.new(1, 0, 0, 30)
+ShineToggleBtn.BackgroundColor3 = SystemConfig.ShineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+ShineToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+ShineToggleBtn.Text = "TOP BAR SHINE: " .. (SystemConfig.ShineEnabled and "ON" or "OFF")
+ShineToggleBtn.Font = Enum.Font.GothamBold
+ShineToggleBtn.TextSize = 12
+ShineToggleBtn.ZIndex = 1003
+ShineToggleBtn.LayoutOrder = 3
+ShineToggleBtn.Parent = Page2Frame
+
+local ShineCorner = Instance.new("UICorner")
+ShineCorner.CornerRadius = UDim.new(0, 4)
+ShineCorner.Parent = ShineToggleBtn
+
+local SavePosBtn = Instance.new("TextButton")
+SavePosBtn.Size = UDim2.new(1, 0, 0, 30)
+SavePosBtn.BackgroundColor3 = Color3.fromRGB(40, 65, 40)
+SavePosBtn.TextColor3 = Color3.fromRGB(150, 255, 150)
+SavePosBtn.Text = "SAVE UI POSITION"
+SavePosBtn.Font = Enum.Font.GothamBold
+SavePosBtn.TextSize = 12
+SavePosBtn.ZIndex = 1003
+SavePosBtn.LayoutOrder = 4
+SavePosBtn.Parent = Page2Frame
+
+local SavePosCorner = Instance.new("UICorner")
+SavePosCorner.CornerRadius = UDim.new(0, 4)
+SavePosCorner.Parent = SavePosBtn
+
+-- ================= CROSSHAIR CONTROLS =================
+local CrosshairTitle = Instance.new("TextLabel")
+CrosshairTitle.Size = UDim2.new(1, 0, 0, 24)
+CrosshairTitle.BackgroundTransparency = 1
+CrosshairTitle.Text = "CROSSHAIR SETTINGS"
+CrosshairTitle.TextColor3 = Color3.fromRGB(220, 220, 220)
+CrosshairTitle.Font = Enum.Font.GothamBold
+CrosshairTitle.TextSize = 12
+CrosshairTitle.TextXAlignment = Enum.TextXAlignment.Left
+CrosshairTitle.ZIndex = 1003
+CrosshairTitle.LayoutOrder = 5
+CrosshairTitle.Parent = Page2Frame
+
+local CrosshairTextInput = Instance.new("TextBox")
+CrosshairTextInput.Size = UDim2.new(1, 0, 0, 30)
+CrosshairTextInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+CrosshairTextInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+CrosshairTextInput.PlaceholderText = "Text under crosshair..."
+CrosshairTextInput.Text = SystemConfig.CrosshairText
+CrosshairTextInput.Font = Enum.Font.Gotham
+CrosshairTextInput.TextSize = 12
+CrosshairTextInput.ZIndex = 1003
+CrosshairTextInput.LayoutOrder = 6
+CrosshairTextInput.Parent = Page2Frame
+
+local CTICorner = Instance.new("UICorner")
+CTICorner.CornerRadius = UDim.new(0, 4)
+CTICorner.Parent = CrosshairTextInput
+
+local CrosshairToggleBtn = Instance.new("TextButton")
+CrosshairToggleBtn.Size = UDim2.new(1, 0, 0, 30)
+CrosshairToggleBtn.BackgroundColor3 = SystemConfig.CrosshairEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+CrosshairToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+CrosshairToggleBtn.Text = "CROSSHAIR: " .. (SystemConfig.CrosshairEnabled and "ON" or "OFF")
+CrosshairToggleBtn.Font = Enum.Font.GothamBold
+CrosshairToggleBtn.TextSize = 12
+CrosshairToggleBtn.ZIndex = 1003
+CrosshairToggleBtn.LayoutOrder = 7
+CrosshairToggleBtn.Parent = Page2Frame
+
+local CTCorner = Instance.new("UICorner")
+CTCorner.CornerRadius = UDim.new(0, 4)
+CTCorner.Parent = CrosshairToggleBtn
+
+local TextToggleBtn = Instance.new("TextButton")
+TextToggleBtn.Size = UDim2.new(1, 0, 0, 30)
+TextToggleBtn.BackgroundColor3 = SystemConfig.CrosshairTextEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+TextToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextToggleBtn.Text = "CROSSHAIR TEXT: " .. (SystemConfig.CrosshairTextEnabled and "ON" or "OFF")
+TextToggleBtn.Font = Enum.Font.GothamBold
+TextToggleBtn.TextSize = 12
+TextToggleBtn.ZIndex = 1003
+TextToggleBtn.LayoutOrder = 8
+TextToggleBtn.Parent = Page2Frame
+
+local TTCorner = Instance.new("UICorner")
+TTCorner.CornerRadius = UDim.new(0, 4)
+TTCorner.Parent = TextToggleBtn
+
+local RainbowToggleBtn = Instance.new("TextButton")
+RainbowToggleBtn.Size = UDim2.new(1, 0, 0, 30)
+RainbowToggleBtn.BackgroundColor3 = SystemConfig.RainbowEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+RainbowToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+RainbowToggleBtn.Text = "RAINBOW COLOUR: " .. (SystemConfig.RainbowEnabled and "ON" or "OFF")
+RainbowToggleBtn.Font = Enum.Font.GothamBold
+RainbowToggleBtn.TextSize = 12
+RainbowToggleBtn.ZIndex = 1003
+RainbowToggleBtn.LayoutOrder = 9
+RainbowToggleBtn.Parent = Page2Frame
+
+local RTBCorner = Instance.new("UICorner")
+RTBCorner.CornerRadius = UDim.new(0, 4)
+RTBCorner.Parent = RainbowToggleBtn
+
+local StickToggleBtn = Instance.new("TextButton")
+StickToggleBtn.Size = UDim2.new(1, 0, 0, 30)
+StickToggleBtn.BackgroundColor3 = SystemConfig.CrosshairStickEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+StickToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+StickToggleBtn.Text = "CROSSHAIR STICK: " .. (SystemConfig.CrosshairStickEnabled and "ON" or "OFF")
+StickToggleBtn.Font = Enum.Font.GothamBold
+StickToggleBtn.TextSize = 12
+StickToggleBtn.ZIndex = 1003
+StickToggleBtn.LayoutOrder = 10
+StickToggleBtn.Parent = Page2Frame
+
+local STCorner = Instance.new("UICorner")
+STCorner.CornerRadius = UDim.new(0, 4)
+STCorner.Parent = StickToggleBtn
+
+-- ================= SPEED + OUTLINE CONTROLS =================
+local SpinLabel = Instance.new("TextLabel")
+SpinLabel.Size = UDim2.new(1, 0, 0, 18)
+SpinLabel.BackgroundTransparency = 1
+SpinLabel.Text = "CROSSHAIR SPIN SPEED (deg/s)"
+SpinLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
+SpinLabel.Font = Enum.Font.Gotham
+SpinLabel.TextSize = 11
+SpinLabel.TextXAlignment = Enum.TextXAlignment.Left
+SpinLabel.ZIndex = 1003
+SpinLabel.LayoutOrder = 11
+SpinLabel.Parent = Page2Frame
+
+local SpinInput = Instance.new("TextBox")
+SpinInput.Size = UDim2.new(1, 0, 0, 30)
+SpinInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+SpinInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+SpinInput.Text = tostring(SystemConfig.CrosshairSpinSpeed)
+SpinInput.Font = Enum.Font.Code
+SpinInput.TextSize = 12
+SpinInput.ZIndex = 1003
+SpinInput.LayoutOrder = 12
+SpinInput.Parent = Page2Frame
+Instance.new("UICorner", SpinInput).CornerRadius = UDim.new(0, 4)
+
+SpinInput.FocusLost:Connect(function()
+    local n = tonumber(SpinInput.Text)
+    if n then SystemConfig.CrosshairSpinSpeed = math.clamp(n, -2000, 2000) end
+    SpinInput.Text = tostring(SystemConfig.CrosshairSpinSpeed)
+    SaveConfigData()
+end)
+
+local PulseLabel = Instance.new("TextLabel")
+PulseLabel.Size = UDim2.new(1, 0, 0, 18)
+PulseLabel.BackgroundTransparency = 1
+PulseLabel.Text = "CROSSHAIR PULSE / ZOOM SPEED"
+PulseLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
+PulseLabel.Font = Enum.Font.Gotham
+PulseLabel.TextSize = 11
+PulseLabel.TextXAlignment = Enum.TextXAlignment.Left
+PulseLabel.ZIndex = 1003
+PulseLabel.LayoutOrder = 13
+PulseLabel.Parent = Page2Frame
+
+local PulseInput = Instance.new("TextBox")
+PulseInput.Size = UDim2.new(1, 0, 0, 30)
+PulseInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+PulseInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+PulseInput.Text = tostring(SystemConfig.CrosshairPulseSpeed)
+PulseInput.Font = Enum.Font.Code
+PulseInput.TextSize = 12
+PulseInput.ZIndex = 1003
+PulseInput.LayoutOrder = 14
+PulseInput.Parent = Page2Frame
+Instance.new("UICorner", PulseInput).CornerRadius = UDim.new(0, 4)
+
+PulseInput.FocusLost:Connect(function()
+    local n = tonumber(PulseInput.Text)
+    if n then SystemConfig.CrosshairPulseSpeed = math.clamp(n, 0, 50) end
+    PulseInput.Text = tostring(SystemConfig.CrosshairPulseSpeed)
+    SaveConfigData()
+end)
+
+local CrosshairOutlineBtn = Instance.new("TextButton")
+CrosshairOutlineBtn.Size = UDim2.new(1, 0, 0, 30)
+CrosshairOutlineBtn.BackgroundColor3 = SystemConfig.CrosshairOutlineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+CrosshairOutlineBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+CrosshairOutlineBtn.Text = "CROSSHAIR OUTLINE: " .. (SystemConfig.CrosshairOutlineEnabled and "ON" or "OFF")
+CrosshairOutlineBtn.Font = Enum.Font.GothamBold
+CrosshairOutlineBtn.TextSize = 12
+CrosshairOutlineBtn.ZIndex = 1003
+CrosshairOutlineBtn.LayoutOrder = 15
+CrosshairOutlineBtn.Parent = Page2Frame
+Instance.new("UICorner", CrosshairOutlineBtn).CornerRadius = UDim.new(0, 4)
+
+CrosshairOutlineBtn.MouseButton1Click:Connect(function()
+    SystemConfig.CrosshairOutlineEnabled = not SystemConfig.CrosshairOutlineEnabled
+    CrosshairOutlineBtn.BackgroundColor3 = SystemConfig.CrosshairOutlineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    CrosshairOutlineBtn.Text = "CROSSHAIR OUTLINE: " .. (SystemConfig.CrosshairOutlineEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+local TextOutlineBtn = Instance.new("TextButton")
+TextOutlineBtn.Size = UDim2.new(1, 0, 0, 30)
+TextOutlineBtn.BackgroundColor3 = SystemConfig.CrosshairTextOutlineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+TextOutlineBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextOutlineBtn.Text = "CROSSHAIR TEXT OUTLINE: " .. (SystemConfig.CrosshairTextOutlineEnabled and "ON" or "OFF")
+TextOutlineBtn.Font = Enum.Font.GothamBold
+TextOutlineBtn.TextSize = 12
+TextOutlineBtn.ZIndex = 1003
+TextOutlineBtn.LayoutOrder = 16
+TextOutlineBtn.Parent = Page2Frame
+Instance.new("UICorner", TextOutlineBtn).CornerRadius = UDim.new(0, 4)
+
+TextOutlineBtn.MouseButton1Click:Connect(function()
+    SystemConfig.CrosshairTextOutlineEnabled = not SystemConfig.CrosshairTextOutlineEnabled
+    TextOutlineBtn.BackgroundColor3 = SystemConfig.CrosshairTextOutlineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    TextOutlineBtn.Text = "CROSSHAIR TEXT OUTLINE: " .. (SystemConfig.CrosshairTextOutlineEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+-- ================= YOKAI MODE BUTTON =================
+local ModeBtn = Instance.new("TextButton")
+ModeBtn.Size = UDim2.new(1, 0, 0, 30)
+ModeBtn.BackgroundColor3 = SystemConfig.CrosshairMode == "Yokai" and Color3.fromRGB(90, 25, 45) or Color3.fromRGB(45, 45, 45)
+ModeBtn.TextColor3 = Color3.fromRGB(255, 210, 220)
+ModeBtn.Text = "CROSSHAIR MODE: " .. string.upper(SystemConfig.CrosshairMode)
+ModeBtn.Font = Enum.Font.GothamBold
+ModeBtn.TextSize = 12
+ModeBtn.ZIndex = 1003
+ModeBtn.LayoutOrder = 17
+ModeBtn.Parent = Page2Frame
+Instance.new("UICorner", ModeBtn).CornerRadius = UDim.new(0, 4)
+
+ModeBtn.MouseButton1Click:Connect(function()
+    if SystemConfig.CrosshairMode == "Yokai" then
+        SystemConfig.CrosshairMode = "Default"
+    else
+        SystemConfig.CrosshairMode = "Yokai"
+    end
+    ModeBtn.Text = "CROSSHAIR MODE: " .. string.upper(SystemConfig.CrosshairMode)
+    ModeBtn.BackgroundColor3 = SystemConfig.CrosshairMode == "Yokai" and Color3.fromRGB(90, 25, 45) or Color3.fromRGB(45, 45, 45)
+    SaveConfigData()
+end)
+-- ===============================================================
+
+local function RefreshPage2Canvas()
+    Page2Frame.CanvasSize = UDim2.new(0, 0, 0, Page2Layout.AbsoluteContentSize.Y + 6)
+end
+Page2Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(RefreshPage2Canvas)
+RefreshPage2Canvas()
+
+-- Nav Logic
+NavBtn.MouseButton1Click:Connect(function()
+    if Page1Frame.Visible then
+        Page1Frame.Visible = false
+        Page2Frame.Visible = true
+        NavBtn.Text = "< SWITCH TO PAGE 1"
+    else
+        Page1Frame.Visible = true
+        Page2Frame.Visible = false
+        NavBtn.Text = "SWITCH TO PAGE 2 >"
+    end
+end)
+
+-- Text update logic (Real-time)
+CustomNameInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local newName = CustomNameInput.Text
+    if #newName > 0 then
+        SystemConfig.CustomName = newName
+        label.Text = string.format('<font color="#d0d0d0">%s</font> | %d fps | %d ms | %s', SystemConfig.CustomName, 0, 0, os.date("%H:%M:%S"))
+    end
+end)
+
+CustomNameInput.FocusLost:Connect(function()
+    if #SystemConfig.CustomName > 0 then
+        SaveConfigData()
+    end
+end)
+
+ShineToggleBtn.MouseButton1Click:Connect(function()
+    SystemConfig.ShineEnabled = not SystemConfig.ShineEnabled
+    ShineToggleBtn.BackgroundColor3 = SystemConfig.ShineEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    ShineToggleBtn.Text = "TOP BAR SHINE: " .. (SystemConfig.ShineEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+SavePosBtn.MouseButton1Click:Connect(function()
+    SystemConfig.SavedUIPosition = {
+        XScale = RootFrame.Position.X.Scale,
+        XOffset = RootFrame.Position.X.Offset,
+        YScale = RootFrame.Position.Y.Scale,
+        YOffset = RootFrame.Position.Y.Offset
+    }
+    SaveConfigData()
+    SavePosBtn.Text = "SAVED!"
+    task.delay(1, function() if SavePosBtn and SavePosBtn.Parent then SavePosBtn.Text = "SAVE UI POSITION" end end)
+end)
+
+CrosshairTextInput:GetPropertyChangedSignal("Text"):Connect(function()
+    SystemConfig.CrosshairText = CrosshairTextInput.Text
+end)
+CrosshairTextInput.FocusLost:Connect(function()
+    SaveConfigData()
+end)
+
+CrosshairToggleBtn.MouseButton1Click:Connect(function()
+    SystemConfig.CrosshairEnabled = not SystemConfig.CrosshairEnabled
+    CrosshairToggleBtn.BackgroundColor3 = SystemConfig.CrosshairEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    CrosshairToggleBtn.Text = "CROSSHAIR: " .. (SystemConfig.CrosshairEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+TextToggleBtn.MouseButton1Click:Connect(function()
+    SystemConfig.CrosshairTextEnabled = not SystemConfig.CrosshairTextEnabled
+    TextToggleBtn.BackgroundColor3 = SystemConfig.CrosshairTextEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    TextToggleBtn.Text = "CROSSHAIR TEXT: " .. (SystemConfig.CrosshairTextEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+RainbowToggleBtn.MouseButton1Click:Connect(function()
+    SystemConfig.RainbowEnabled = not SystemConfig.RainbowEnabled
+    RainbowToggleBtn.BackgroundColor3 = SystemConfig.RainbowEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    RainbowToggleBtn.Text = "RAINBOW COLOUR: " .. (SystemConfig.RainbowEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+StickToggleBtn.MouseButton1Click:Connect(function()
+    SystemConfig.CrosshairStickEnabled = not SystemConfig.CrosshairStickEnabled
+    StickToggleBtn.BackgroundColor3 = SystemConfig.CrosshairStickEnabled and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(45, 45, 45)
+    StickToggleBtn.Text = "CROSSHAIR STICK: " .. (SystemConfig.CrosshairStickEnabled and "ON" or "OFF")
+    SaveConfigData()
+end)
+
+-- Core execution logic
+local function PureCleanupScript(name: string)
+    if ActiveUIElements[name] then
+        for _, instance in ipairs(ActiveUIElements[name]) do
+            pcall(function() instance:Destroy() end)
+        end
+        ActiveUIElements[name] = nil
+    end
+end
+
+local function FastTrackExecuteScript(name: string, code: string)
+    PureCleanupScript(name)
+    ActiveUIElements[name] = {}
+
+    local initialGuis = playerGui:GetChildren()
+
+    local func, err = loadstring(code)
+    if func then
+        task.spawn(function()
+            local success, runErr = pcall(func)
+            if not success then
+                warn("[NO_NAME RUNTIME EXCEPTION] " .. tostring(runErr))
+            else
+                task.wait(0.3)
+                for _, child in ipairs(playerGui:GetChildren()) do
+                    if child:IsA("ScreenGui") and not table.find(initialGuis, child) and child.Name ~= "no_nameUI" then
+                        table.insert(ActiveUIElements[name], child)
+                    end
+                end
+            end
+        end)
+    else
+        warn("[NO_NAME COMPILE FAILURE]: " .. tostring(err))
+    end
+end
+
+local function RunAutoLoadScripts()
+    if not SystemConfig.LuaAutoLoadScripts then return end
+    for name, enabled in pairs(SystemConfig.LuaAutoLoadScripts) do
+        if enabled == true and SystemConfig.SavedScripts[name] then
+            FastTrackExecuteScript(name, SystemConfig.SavedScripts[name].Code)
+        end
+    end
+end
+
+local function RebuildScrollInventory()
+    for _, child in ipairs(ScrollList:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    for name, data in pairs(SystemConfig.SavedScripts) do
+        local entryFrame = Instance.new("Frame")
+        entryFrame.Name = name
+        entryFrame.Size = UDim2.new(1, -8, 0, 24)
+        entryFrame.BackgroundTransparency = 1
+        entryFrame.ZIndex = 1004
+        entryFrame.Parent = ScrollList
+
+        local runAction = Instance.new("TextButton")
+        runAction.Size = UDim2.new(0.4, -2, 1, 0)
+        runAction.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        runAction.TextColor3 = Color3.fromRGB(255, 255, 255)
+        runAction.Text = name
+        runAction.Font = Enum.Font.Gotham
+        runAction.TextSize = 11
+        runAction.ZIndex = 1005
+        runAction.Parent = entryFrame
+
+        local RunCorner = Instance.new("UICorner")
+        RunCorner.CornerRadius = UDim.new(0, 4)
+        RunCorner.Parent = runAction
+
+        local editAction = Instance.new("TextButton")
+        editAction.Size = UDim2.new(0.2, 0, 1, 0)
+        editAction.Position = UDim2.new(0.4, 0, 0, 0)
+        editAction.BackgroundColor3 = Color3.fromRGB(45, 55, 75)
+        editAction.TextColor3 = Color3.fromRGB(180, 210, 255)
+        editAction.Text = "✏"
+        editAction.Font = Enum.Font.GothamBold
+        editAction.TextSize = 13
+        editAction.ZIndex = 1005
+        editAction.Parent = entryFrame
+
+        local EditCorner = Instance.new("UICorner")
+        EditCorner.CornerRadius = UDim.new(0, 4)
+        EditCorner.Parent = editAction
+
+        local isAuto = SystemConfig.LuaAutoLoadScripts and SystemConfig.LuaAutoLoadScripts[name] == true
+        local autoAction = Instance.new("TextButton")
+        autoAction.Size = UDim2.new(0.2, 0, 1, 0)
+        autoAction.Position = UDim2.new(0.6, 0, 0, 0)
+        autoAction.BackgroundColor3 = isAuto and Color3.fromRGB(40, 80, 40) or Color3.fromRGB(45, 45, 45)
+        autoAction.TextColor3 = isAuto and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(200, 200, 210)
+        autoAction.Text = isAuto and "A●" or "A"
+        autoAction.Font = Enum.Font.GothamBold
+        autoAction.TextSize = 11
+        autoAction.ZIndex = 1005
+        autoAction.Parent = entryFrame
+
+        local AutoCorner = Instance.new("UICorner")
+        AutoCorner.CornerRadius = UDim.new(0, 4)
+        AutoCorner.Parent = autoAction
+
+        local deleteAction = Instance.new("TextButton")
+        deleteAction.Size = UDim2.new(0.2, 0, 1, 0)
+        deleteAction.Position = UDim2.new(0.8, 0, 0, 0)
+        deleteAction.BackgroundColor3 = Color3.fromRGB(70, 40, 40)
+        deleteAction.TextColor3 = Color3.fromRGB(255, 130, 130)
+        deleteAction.Text = "X"
+        deleteAction.Font = Enum.Font.GothamBold
+        deleteAction.TextSize = 11
+        deleteAction.ZIndex = 1005
+        deleteAction.Parent = entryFrame
+
+        local DelCorner = Instance.new("UICorner")
+        DelCorner.CornerRadius = UDim.new(0, 4)
+        DelCorner.Parent = deleteAction
+
+        runAction.MouseButton1Click:Connect(function()
+            FastTrackExecuteScript(name, data.Code)
+        end)
+
+        editAction.MouseButton1Click:Connect(function()
+            NameInput.Text = name
+            CodeInput.Text = data.Code
+        end)
+
+        autoAction.MouseButton1Click:Connect(function()
+            SystemConfig.LuaAutoLoadScripts = SystemConfig.LuaAutoLoadScripts or {}
+            if SystemConfig.LuaAutoLoadScripts[name] then
+                SystemConfig.LuaAutoLoadScripts[name] = nil
+            else
+                SystemConfig.LuaAutoLoadScripts[name] = true
+            end
+            SaveConfigData()
+            RebuildScrollInventory()
+        end)
+
+        deleteAction.MouseButton1Click:Connect(function()
+            PureCleanupScript(name)
+            SystemConfig.SavedScripts[name] = nil
+            if SystemConfig.LuaAutoLoadScripts and SystemConfig.LuaAutoLoadScripts[name] then
+                SystemConfig.LuaAutoLoadScripts[name] = nil
+            end
+            SaveConfigData()
+            RebuildScrollInventory()
+        end)
+    end
+    ScrollList.CanvasSize = UDim2.new(0, 0, 0, GridListLayout.AbsoluteContentSize.Y + 4)
+end
+
+SaveBtn.MouseButton1Click:Connect(function()
+    local name = NameInput.Text
+    local code = CodeInput.Text
+    if name ~= "" and code ~= "" then
+        SystemConfig.SavedScripts[name] = { Code = code }
+        SaveConfigData()
+        RebuildScrollInventory()
+        NameInput.Text = ""
+        CodeInput.Text = ""
+    end
+end)
+
+RebuildScrollInventory()
+
+local dragging, dragStart, startPos, activeInput
+
+bar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = RootFrame.Position
+        activeInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input == activeInput then
+        local delta = input.Position - dragStart
+        RootFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+        activeInput = nil
+    end
+end)
+
+bar.MouseButton1Click:Connect(function()
+    local isVisible = not MainFrame.Visible
+    MainFrame.Visible = isVisible
+    RootFrame.Size = isVisible and UDim2.fromOffset(300, 340) or UDim2.fromOffset(300, 26)
+end)
+
+local fps, frames, elapsed = 0, 0, 0
+RunService.RenderStepped:Connect(function(dt)
+    frames = frames + 1
+    elapsed = elapsed + dt
+    if elapsed >= 1 then
+        fps = math.floor(frames / elapsed + 0.5)
+        frames, elapsed = 0, 0
+    end
+end)
+
+task.spawn(function()
+    while gui.Parent do
+        local ping = 0
+        pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5) end)
+        label.Text = string.format('<font color="#d0d0d0">%s</font> | %d fps | %d ms | %s', SystemConfig.CustomName, fps, ping, os.date("%H:%M:%S"))
+        task.wait(0.5)
+    end
+end)
+
+-- ================= CROSSHAIR STICK ENGINE =================
+local function WorldToScreen(worldPos: Vector3): Vector2?
+    local cam = workspace.CurrentCamera
+    if not cam then return nil end
+    local rel = cam.CFrame:PointToObjectSpace(worldPos)
+    if rel.Z >= 0 then return nil end
+    local vp = cam.ViewportSize
+    local tanHalf = math.tan(math.rad(cam.FieldOfView) * 0.5)
+    local aspect = vp.X / vp.Y
+    local sx = (rel.X / (-rel.Z * tanHalf * aspect)) * (vp.X * 0.5)
+    local sy = (rel.Y / (-rel.Z * tanHalf)) * (vp.Y * 0.5)
+    return Vector2.new(sx, sy)
+end
+
+local function getHeadPos(character: Model): Vector3?
+    local head = character:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then return head.Position end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp:IsA("BasePart") then return hrp.Position end
+    return nil
+end
+
+local function isAlive(model: Model?): boolean
+    if not model then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    return hum ~= nil and hum.Health > 0
+end
+
+local function findStickTarget(): (Vector2?, Model?)
+    local myTeam = player.Team
+    local bestDist, bestScreen, bestModel = SystemConfig.StickFOV, nil, nil
+    for _, other in ipairs(Players:GetPlayers()) do
+        if other ~= player then
+            local char = other.Character
+            if isAlive(char) then
+                local skip = false
+                if SystemConfig.StickTeamCheck and myTeam and other.Team == myTeam then
+                    skip = true
+                end
+                if not skip then
+                    local head = getHeadPos(char)
+                    if head then
+                        local screen = WorldToScreen(head)
+                        if screen then
+                            local d = screen.Magnitude
+                            if d < bestDist then
+                                bestDist = d
+                                bestScreen = screen
+                                bestModel = char
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestScreen, bestModel
+end
+
+local stickOffset = Vector2.new(0, 0)
+
+RunService.RenderStepped:Connect(function(dt)
+    if not SystemConfig.CrosshairStickEnabled or not SystemConfig.CrosshairEnabled then
+        stickOffset = stickOffset:Lerp(Vector2.new(0, 0), math.clamp(dt * 10, 0, 1))
+        return
+    end
+    local screen, _ = findStickTarget()
+    local target = screen or Vector2.new(0, 0)
+    stickOffset = stickOffset:Lerp(target, math.clamp(dt * SystemConfig.StickSmoothing, 0, 1))
+end)
+-- ==========================================================
+
+-- Rainbow Crosshair
+local center = Instance.new("Frame")
+center.Size = UDim2.fromOffset(0, 0)
+center.Position = UDim2.fromScale(0.5, 0.5)
+center.BackgroundTransparency = 1
+center.ZIndex = 998
+center.Parent = gui
+
+local crosshair = Instance.new("Frame")
+crosshair.Size = UDim2.fromOffset(60, 60)
+crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+crosshair.BackgroundTransparency = 1
+crosshair.ZIndex = 998
+crosshair.Parent = center
+
+local scale = Instance.new("UIScale")
+scale.Parent = crosshair
+
+local crosshairLabel = Instance.new("TextLabel")
+crosshairLabel.Size = UDim2.fromOffset(100, 20)
+crosshairLabel.AnchorPoint = Vector2.new(0.5, 0)
+crosshairLabel.Position = UDim2.new(0, 0, 0, 22)
+crosshairLabel.BackgroundTransparency = 1
+crosshairLabel.Text = SystemConfig.CrosshairText
+crosshairLabel.Font = Enum.Font.Arcade
+crosshairLabel.TextSize = 14
+crosshairLabel.ZIndex = 999
+crosshairLabel.Parent = center
+
+local textStroke = Instance.new("UIStroke")
+textStroke.Color = Color3.fromRGB(0, 0, 0)
+textStroke.Thickness = 1.5
+textStroke.Enabled = SystemConfig.CrosshairTextOutlineEnabled
+textStroke.Parent = crosshairLabel
+
+local STATIC_COLOR = Color3.fromRGB(235, 235, 235)
+
+local lineStrokes = {}
+local function makeLine(w, h)
+    local line = Instance.new("Frame")
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.Size = UDim2.fromOffset(w, h)
+    line.BorderSizePixel = 0
+    line.ZIndex = 999
+    line.Parent = crosshair
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Thickness = 1.5
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Enabled = SystemConfig.CrosshairOutlineEnabled
+    stroke.Parent = line
+    table.insert(lineStrokes, stroke)
+    return line
+end
+local top, bottom, left, right = makeLine(1, 14), makeLine(1, 14), makeLine(14, 1), makeLine(14, 1)
+local lines = {top, bottom, left, right}
+local hue, rotation, pulse = 0, 0, 0
+
+RunService.RenderStepped:Connect(function(dt)
+    crosshair.Visible = SystemConfig.CrosshairEnabled
+    crosshairLabel.Visible = SystemConfig.CrosshairEnabled and SystemConfig.CrosshairTextEnabled
+
+    if crosshairLabel.Text ~= SystemConfig.CrosshairText then
+        crosshairLabel.Text = SystemConfig.CrosshairText
+    end
+
+    if not SystemConfig.CrosshairEnabled then
+        return
+    end
+
+    local effSpin, effPulse, effOutline, tint, tintEdge = GetEffectiveCrosshairParams()
+
+    if SystemConfig.RainbowEnabled and not tint then
+        hue = (hue + dt * 0.25) % 1
+    end
+    rotation = (rotation + dt * effSpin) % 360
+    pulse = pulse + dt * effPulse
+
+    local color
+    if tint then
+        local a = (math.sin(pulse) + 1) / 2
+        color = tint:Lerp(Color3.fromRGB(60, 0, 15), 1 - a)
+    elseif SystemConfig.RainbowEnabled then
+        color = Color3.fromHSV(hue, 1, 1)
+    else
+        color = STATIC_COLOR
+    end
+
+    local alpha = (math.sin(pulse) + 1) / 2
+    scale.Scale = 0.85 + alpha * 0.3
+    crosshair.Rotation = rotation
+
+    for _, l in ipairs(lines) do l.BackgroundColor3 = color end
+    for _, s in ipairs(lineStrokes) do
+        s.Enabled = effOutline
+        if tintEdge then
+            s.Color = tintEdge
+            s.Thickness = 2
+        else
+            s.Color = Color3.fromRGB(0, 0, 0)
+            s.Thickness = 1.5
+        end
+    end
+    textStroke.Enabled = SystemConfig.CrosshairTextOutlineEnabled or (tint ~= nil)
+    if tint and SystemConfig.CrosshairTextOutlineEnabled then
+        textStroke.Color = tintEdge
+    end
+    crosshairLabel.TextColor3 = color
+
+    local offset = (4 + alpha * 8) + 7
+    top.Position    = UDim2.new(0.5,  0,      0.5, -offset)
+    bottom.Position = UDim2.new(0.5,  0,      0.5,  offset)
+    left.Position   = UDim2.new(0.5, -offset, 0.5,  0)
+    right.Position  = UDim2.new(0.5,  offset, 0.5,  0)
+
+    local cam = workspace.CurrentCamera
+    local vp = cam and cam.ViewportSize or Vector2.new(1, 1)
+    local sx = stickOffset.X / math.max(vp.X, 1)
+    local sy = stickOffset.Y / math.max(vp.Y, 1)
+    center.Position = UDim2.fromScale(0.5 + sx, 0.5 + sy)
+end)
+
+print("[NO_NAME CORE] Layer matrix configuration forced to absolute max ceiling.")
+
+-- Auto-load scripts on init
+task.defer(function()
+    task.wait(0.1)
+    RunAutoLoadScripts()
+end)
